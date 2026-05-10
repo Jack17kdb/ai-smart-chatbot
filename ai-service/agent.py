@@ -6,11 +6,22 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from typing import Annotated, TypedDict
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.messages import add_messages
+from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.tools import tool
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_community.vectorstores.utils import filter_complex_metadata
+
+llm = ChatGroq(
+	model="llama-3.1-70b-versatile",
+	temperature=0.3,
+	max_tokens=1024
+)
+
+embeddings = HuggingFaceEmbeddings(
+	model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
 
 loader = DirectoryLoader(
 	path="data/",
@@ -34,28 +45,20 @@ text_splitter = RecursiveCharacterTextSplitter(
 
 splits = text_splitter.split_documents(documents)
 
-embeddings = HuggingFaceEmbeddings(
-	model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
-
 vectorstore = Chroma.from_documents(
-	documents=splits,
+	documents=filter_complex_metadata(splits),
 	embedding=embeddings,
 	persist_directory="./chroma_db"
 )
 
 retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
-llm = ChatGroq(
-	model="llama-3.3-70b-versatile",
-	temperature=0.3,
-	max_tokens=1024
-)
-
 @tool
 def retrieve(query: str) -> str:
 	"""Retrieve relevant information from user's documents."""
+	
 	docs = retriever.invoke(query)
+	
 	return "\n\n".join([doc.page_content for doc in docs])
 
 tools = [retrieve]
@@ -66,8 +69,14 @@ class AgentState(TypedDict):
 llm_with_tool = llm.bind_tools(tools)
 
 def chatbot(state: AgentState):
-	response = llm_with_tool.invoke(state['messages'])
-	return { "messages": [response] }
+	sys_msg = SystemMessage(content="""You are a helpful assistant with access to the user's documents.
+		You MUST use the 'retrieve' tool when the user asks about information that might be in their documents.
+		Always call the tool in the correct JSON format - never use <function> tags.
+		If the question is general or you don't need documents, answer directly without tools."""
+	)
+	messages = [sys_msg] + state["messages"]
+	response = llm_with_tool.invoke(messages)
+	return {"messages": [response]}
 
 workflow = StateGraph(AgentState)
 
