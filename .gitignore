@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# AI service
+ai-service/chroma_db/
+ai-service/data/*.pdf
+ai-service/data/*.docx
+ai-service/data/*.txt
+ai-service/data/*.csv
+
+# Node / React
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Misc
+.DS_Store
+*.log
